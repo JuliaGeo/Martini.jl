@@ -1,0 +1,11 @@
+name = "Martini"
+uuid = "708b7f4f-91e4-4a8e-b2fa-90ee0f61c5a8"
+authors = ["Claude AI <claude@anthropic.com>"]
+version = "0.1.0"
+
+[deps]
+GeometryBasics = "5c1252a2-5f33-56bf-86c9-59e7332b4326"
+
+[compat]
+julia = "1.6"
+GeometryBasics = "0.4"
