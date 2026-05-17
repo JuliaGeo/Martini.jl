@@ -23,8 +23,11 @@ function mapbox_terrain_to_grid(png_path::AbstractString)
             r = Int(reinterpret(UInt8, N0f8(red(px))))
             g = Int(reinterpret(UInt8, N0f8(green(px))))
             b = Int(reinterpret(UInt8, N0f8(blue(px))))
+            # JS decodes in Float64 then truncates on Float32Array store; the F32
+            # pipeline gives ~1 ULP differences that flip subdivision decisions
+            # at low max_error thresholds.
             terrain[y * grid_size + x + 1] =
-                Float32((r * 65536 + g * 256 + b) / 10f0 - 10000f0)
+                Float32((r * 65536 + g * 256 + b) / 10.0 - 10000.0)
         end
     end
 

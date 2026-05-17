@@ -106,16 +106,19 @@ function _update_errors!(tile::Tile)
         cx = mx + my - ay
         cy = my + ax - mx
 
-        interp = (terrain[ax, ay] + terrain[bx, by]) / 2
-        middle_err = abs(interp - terrain[mx, my])
-        errors[mx, my] = max(errors[mx, my], middle_err)
+        # Float64 intermediates match the JS reference: reading from a Float32Array
+        # promotes to a JS Number (Float64); Math.max(F32, F64) compares in F64 and
+        # truncates only on store back to the Float32Array. We mirror that exactly.
+        interp = (Float64(terrain[ax, ay]) + Float64(terrain[bx, by])) / 2
+        middle_err = abs(interp - Float64(terrain[mx, my]))
+        errors[mx, my] = Float32(max(Float64(errors[mx, my]), middle_err))
 
         if i < npt
-            errors[mx, my] = max(
-                errors[mx, my],
-                errors[(ax + cx) >> 1, (ay + cy) >> 1],
-                errors[(bx + cx) >> 1, (by + cy) >> 1],
-            )
+            errors[mx, my] = Float32(max(
+                Float64(errors[mx, my]),
+                Float64(errors[(ax + cx) >> 1, (ay + cy) >> 1]),
+                Float64(errors[(bx + cx) >> 1, (by + cy) >> 1]),
+            ))
         end
     end
     return tile

@@ -2,3 +2,4 @@
 /test/Manifest.toml
 *.cov
 /docs/build/
+/bench/Manifest.toml
