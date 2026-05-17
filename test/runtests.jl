@@ -158,6 +158,28 @@ include("util.jl")
         @test sort(unique(flat)) == UInt32[0, 1, 2, 3]
     end
 
+    @testset "GeometryBasics.Mesh round-trip" begin
+        using GeometryBasics
+        m = Mesher(5)
+        terrain = zeros(Float32, 25)
+        terrain[13] = 100f0           # spike forces subdivision
+        tile = create_tile(m, terrain)
+        mesh = get_mesh(tile;
+            max_error  = 0,
+            point_type = Point2{Float32},
+            face_type  = GLTriangleFace,
+        )
+        # The Martini mesh fields are *directly* the arguments GeometryBasics
+        # expects — no per-element transformation, no copies needed.
+        gb = GeometryBasics.Mesh(mesh.vertices, mesh.triangles)
+        @test gb isa GeometryBasics.Mesh
+        @test length(GeometryBasics.coordinates(gb)) == length(mesh.vertices)
+        @test length(GeometryBasics.faces(gb))       == length(mesh.triangles)
+        # Coordinates and faces survive the round-trip without modification.
+        @test GeometryBasics.coordinates(gb) == mesh.vertices
+        @test GeometryBasics.faces(gb)       == mesh.triangles
+    end
+
     @testset "MesherCache reuse" begin
         m = Mesher(5)
         tile = create_tile(m, zeros(Float32, 25))
