@@ -2,6 +2,14 @@ module Martini
 
 export Mesher, Tile, Mesh, create_tile, get_mesh
 
+"""
+    Mesher(grid_size::Integer = 257)
+
+Precompute the implicit RTIN binary-tree triangle coordinates for a tile of
+size `grid_size × grid_size`. `grid_size` must be `2^k + 1` for some `k >= 1`
+(i.e. 3, 5, 9, 17, 33, 65, 129, 257, 513, …). Constant per grid size — reuse
+a single `Mesher` across many terrains via [`create_tile`](@ref).
+"""
 struct Mesher
     grid_size::Int
     num_triangles::Int
