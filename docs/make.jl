@@ -7,9 +7,9 @@ makedocs(
     sitename = "Martini.jl",
     modules = [Martini],
     authors = "Anshul Singhvi <anshulsinghvi@gmail.com> and contributors",
-    repo = Documenter.Remotes.GitHub("asinghvi17", "Martini.jl"),
+    repo = Documenter.Remotes.GitHub("JuliaGeo", "Martini.jl"),
     format = Documenter.HTML(
-        canonical = "https://asinghvi17.github.io/Martini.jl/stable/",
+        canonical = "https://JuliaGeo.github.io/Martini.jl/stable/",
         prettyurls = get(ENV, "CI", "false") == "true",
         edit_link = "main",
     ),
@@ -21,7 +21,7 @@ makedocs(
 )
 
 deploydocs(
-    repo = "github.com/asinghvi17/Martini.jl",
+    repo = "github.com/JuliaGeo/Martini.jl",
     devbranch = "main",
     push_preview = true,
 )
