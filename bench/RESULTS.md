@@ -12,14 +12,16 @@ Mesh output: identical (9704 vertices, 19086 triangles at `max_error=30`).
 
 | op                 | JS (console.time) | Julia (Chairmarks median) | Julia (single-shot)¹ | speedup vs JS |
 |--------------------|-------------------|---------------------------|----------------------|---------------|
-| `Mesher(513)`      | 19.704 ms         | 3.689 ms                  | 3.734 ms             | **5.3×**      |
-| `create_tile`      | 3.179 ms          | 1.319 ms                  | 1.569 ms             | **2.4×**      |
-| `get_mesh(30)`     | 1.210 ms          | 0.179 ms                  | 0.391 ms             | **6.8×** (median) / 3.1× (single) |
-| 21-mesh sweep total| 89.134 ms²        | 37.280 ms                 | —                    | **2.4×**      |
+| `Mesher(513)`      | 19.704 ms         | 3.715 ms                  | 3.806 ms             | **5.3×**      |
+| `create_tile`      | 3.179 ms          | 1.267 ms                  | 1.425 ms             | **2.5×**      |
+| `get_mesh(30)`     | 1.210 ms          | 0.181 ms                  | 0.425 ms             | **6.7×** (median) / 2.8× (single) |
+| 21-mesh sweep total³ | 89.134 ms²        | 37.108 ms                 | —                    | **2.4×**      |
 
 ¹ Julia "single-shot" timings exclude method-compilation cost by running each operation once after a warm-up call. Comparable to JS `console.time` after V8 has compiled the hot path.
 
 ² JS bench reports `20 meshes total` for the loop `i = 0…20` — that's 21 iterations; the JS label is misleading.
+
+³ Julia sweep reuses a single `MesherCache` across all 21 calls (saves the per-call `Matrix{UInt32}` allocation). See `bench/bench.jl`.
 
 ## max_error sweep, side-by-side
 

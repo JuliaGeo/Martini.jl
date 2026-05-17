@@ -52,13 +52,17 @@ include("util.jl")
         tile = create_tile(m, zeros(Float32, 25))
         mesh = get_mesh(tile; max_error = 0)
         # Flat -> no subdivision: 4 corner vertices, 2 triangles.
-        @test size(mesh.vertices) == (2, 4)
-        @test size(mesh.triangles) == (3, 2)
-        coord_set = Set(eachcol(mesh.vertices))
+        @test mesh.vertices isa Vector{Tuple{UInt16, UInt16}}
+        @test mesh.triangles isa Vector{Tuple{UInt32, UInt32, UInt32}}
+        @test length(mesh.vertices) == 4
+        @test length(mesh.triangles) == 2
         # 1-based corners: (1,1) … (5,5)
-        @test coord_set == Set([UInt16[1, 1], UInt16[5, 1], UInt16[1, 5], UInt16[5, 5]])
-        # Triangle indices are 1-based and refer to existing columns.
-        @test all(1 .<= mesh.triangles .<= 4)
+        @test Set(mesh.vertices) == Set([
+            (UInt16(1), UInt16(1)), (UInt16(5), UInt16(1)),
+            (UInt16(1), UInt16(5)), (UInt16(5), UInt16(5)),
+        ])
+        # Triangle indices are 1-based and refer to existing entries.
+        @test all(tri -> all(1 .<= tri .<= 4), mesh.triangles)
     end
 
     @testset "get_mesh subdivides when error exceeds threshold" begin
@@ -68,7 +72,7 @@ include("util.jl")
         tile = create_tile(m, terrain)
         mesh_loose = get_mesh(tile; max_error = 1000)   # threshold above spike
         mesh_tight = get_mesh(tile; max_error = 0)      # threshold below spike
-        @test size(mesh_tight.vertices, 2) > size(mesh_loose.vertices, 2)
+        @test length(mesh_tight.vertices) > length(mesh_loose.vertices)
     end
 
     @testset "mapbox_terrain_to_grid (fuji)" begin
@@ -110,7 +114,61 @@ include("util.jl")
         ]
         expected_triangles = expected_triangles_0based .+ UInt32(1)
 
-        @test vec(mesh.vertices)  == expected_vertices
-        @test vec(mesh.triangles) == expected_triangles
+        expected_vertex_tuples = [
+            (expected_vertices[2i-1], expected_vertices[2i])
+            for i in 1:(length(expected_vertices) ÷ 2)
+        ]
+        expected_triangle_tuples = [
+            (expected_triangles[3i-2], expected_triangles[3i-1], expected_triangles[3i])
+            for i in 1:(length(expected_triangles) ÷ 3)
+        ]
+        @test mesh.vertices  == expected_vertex_tuples
+        @test mesh.triangles == expected_triangle_tuples
+    end
+
+    @testset "Tile{Float64}" begin
+        m = Mesher(5)
+        terrain = zeros(Float64, 25)
+        terrain[13] = 100.0
+        tile = create_tile(m, terrain)
+        @test tile isa Martini.Tile{Float64}
+        @test eltype(tile.terrain) == Float64
+        @test eltype(tile.errors) == Float64
+        @test tile.errors[3, 3] == 100.0
+        mesh = get_mesh(tile; max_error = 0)
+        @test length(mesh.vertices) > 4
+    end
+
+    @testset "GeometryBasics interop" begin
+        using GeometryBasics
+        m = Mesher(5)
+        tile = create_tile(m, zeros(Float32, 25))
+        mesh = get_mesh(tile;
+            point_type = Point2{UInt16},
+            face_type  = GLTriangleFace,
+        )
+        @test mesh.vertices isa Vector{Point2{UInt16}}
+        @test mesh.triangles isa Vector{GLTriangleFace}
+        @test length(mesh.vertices) == 4
+        @test length(mesh.triangles) == 2
+        # GLTriangleFace stores via OffsetInteger{-1, UInt32}, so 1-based input
+        # becomes 0-based GL-ready bytes. Verify via reinterpret.
+        flat = reinterpret(UInt32, mesh.triangles)
+        @test all(0 .<= flat .<= 3)
+        @test sort(unique(flat)) == UInt32[0, 1, 2, 3]
+    end
+
+    @testset "MesherCache reuse" begin
+        m = Mesher(5)
+        tile = create_tile(m, zeros(Float32, 25))
+        cache = MesherCache(m)
+        mesh1 = get_mesh(tile; max_error = 0, cache)
+        mesh2 = get_mesh(tile; max_error = 0, cache)
+        @test mesh1.vertices == mesh2.vertices
+        @test mesh1.triangles == mesh2.triangles
+
+        # Size mismatch should error before mutating anything.
+        bad = MesherCache(9)
+        @test_throws ArgumentError get_mesh(tile; cache = bad)
     end
 end

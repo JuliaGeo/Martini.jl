@@ -1,6 +1,6 @@
 module Martini
 
-export Mesher, Tile, Mesh, create_tile, get_mesh
+export Mesher, MesherCache, Tile, Mesh, create_tile, get_mesh
 
 """
     Mesher(grid_size::Integer = 257)
@@ -62,22 +62,25 @@ struct Mesher
 end
 
 """
-    Tile
+    Tile{T<:AbstractFloat}
 
 A heightfield bound to a [`Mesher`](@ref), together with the per-vertex maximum
 approximation error map. Constructed via [`create_tile`](@ref); pass to
 [`get_mesh`](@ref) to extract a triangle mesh at any error threshold.
 
+`T` is the storage eltype, inferred from the input array passed to
+`create_tile` (defaults to `Float32` for non-`AbstractFloat` input).
+
 Fields:
 - `mesher::Mesher` — the precomputed RTIN structure
-- `terrain::Matrix{Float32}` — `(grid_size, grid_size)`, indexed `terrain[x, y]` (1-based)
-- `errors::Matrix{Float32}`  — same shape; `errors[x, y]` is the worst error
+- `terrain::Matrix{T}` — `(grid_size, grid_size)`, indexed `terrain[x, y]` (1-based)
+- `errors::Matrix{T}`  — same shape; `errors[x, y]` is the worst error
   observed at grid position `(x, y)` across all triangle levels.
 """
-struct Tile
+struct Tile{T<:AbstractFloat}
     mesher::Mesher
-    terrain::Matrix{Float32}
-    errors::Matrix{Float32}
+    terrain::Matrix{T}
+    errors::Matrix{T}
 end
 
 """
@@ -88,25 +91,40 @@ of length `grid_size^2` (y-major, matching the Mapbox/JS convention) or a
 `Matrix` of size `(grid_size, grid_size)` indexed `terrain[x, y]` with 1-based
 `(x, y)`. The two layouts share memory after reshape. Computes the per-vertex
 max-error map eagerly.
+
+The element type of `terrain` determines the `Tile{T}` eltype: pass
+`Matrix{Float64}` to get a `Tile{Float64}`. Non-`AbstractFloat` input is
+collected into `Float32`.
 """
-function create_tile(mesher::Mesher, terrain)
+Base.@constprop :aggressive function create_tile(
+    mesher::Mesher,
+    terrain::AbstractArray{T},
+) where {T<:AbstractFloat}
     sz = mesher.grid_size
     length(terrain) == sz * sz || throw(ArgumentError(
         "Expected terrain of length $(sz * sz) ($sz x $sz), got $(length(terrain))."))
-    terrain_mat = reshape(collect(Float32, terrain), sz, sz)
-    errors_mat = zeros(Float32, sz, sz)
-    tile = Tile(mesher, terrain_mat, errors_mat)
+    terrain_mat = reshape(collect(T, terrain), sz, sz)
+    errors_mat = zeros(T, sz, sz)
+    tile = Tile{T}(mesher, terrain_mat, errors_mat)
     _update_errors!(tile)
     return tile
 end
 
-function _update_errors!(tile::Tile)
+function create_tile(mesher::Mesher, terrain)
+    create_tile(mesher, collect(Float32, terrain))
+end
+
+@inline widen_for_error(::Type{Float32}) = Float64
+@inline widen_for_error(::Type{T}) where {T<:AbstractFloat} = T
+
+function _update_errors!(tile::Tile{T}) where {T<:AbstractFloat}
     m = tile.mesher
     coords = m.coords
     terrain = tile.terrain
     errors = tile.errors
     npt = m.num_parent_triangles
     nt = m.num_triangles
+    W = widen_for_error(T)
 
     @inbounds for i in (nt - 1):-1:0
         k = i * 4 + 1
@@ -119,18 +137,18 @@ function _update_errors!(tile::Tile)
         cx = mx + my - ay
         cy = my + ax - mx
 
-        # Float64 intermediates match the JS reference: reading from a Float32Array
-        # promotes to a JS Number (Float64); Math.max(F32, F64) compares in F64 and
-        # truncates only on store back to the Float32Array. We mirror that exactly.
-        interp = (Float64(terrain[ax, ay]) + Float64(terrain[bx, by])) / 2
-        middle_err = abs(interp - Float64(terrain[mx, my]))
-        errors[mx, my] = Float32(max(Float64(errors[mx, my]), middle_err))
+        # For T=Float32, widen to Float64 to bit-match the JS reference (its
+        # Float32Array reads promote to Number/F64, comparisons happen in F64,
+        # and truncation only on store). For T=Float64 this is a no-op.
+        interp = (W(terrain[ax, ay]) + W(terrain[bx, by])) / 2
+        middle_err = abs(interp - W(terrain[mx, my]))
+        errors[mx, my] = T(max(W(errors[mx, my]), middle_err))
 
         if i < npt
-            errors[mx, my] = Float32(max(
-                Float64(errors[mx, my]),
-                Float64(errors[(ax + cx) >> 1, (ay + cy) >> 1]),
-                Float64(errors[(bx + cx) >> 1, (by + cy) >> 1]),
+            errors[mx, my] = T(max(
+                W(errors[mx, my]),
+                W(errors[(ax + cx) >> 1, (ay + cy) >> 1]),
+                W(errors[(bx + cx) >> 1, (by + cy) >> 1]),
             ))
         end
     end
@@ -138,23 +156,61 @@ function _update_errors!(tile::Tile)
 end
 
 """
-    Mesh
+    Mesh{P,F}
 
-Result of `get_mesh`. `vertices` is a `2 × N` matrix where each column is a
-**1-based** `(x, y)` grid coordinate in `[1, grid_size]`. `triangles` is a
-`3 × M` matrix where each column is a triple of 1-based column indices into
-`vertices`. For WebGL/OpenGL output, subtract 1 from both `vertices` (to land
-in `[0, grid_size-1]`) and `triangles` (to get 0-based indices).
+Result of [`get_mesh`](@ref). `vertices::Vector{P}` and `triangles::Vector{F}`,
+both 1-based by default.
+
+- `P` is constructed as `P(x, y)` where `(x, y)` are 1-based grid coordinates
+  in `[1, grid_size]`.
+- `F` is constructed as `F(a, b, c)` where `(a, b, c)` are 1-based column
+  indices into `vertices`.
+
+Defaults are `P = NTuple{2,UInt16}` and `F = NTuple{3,UInt32}` so there is no
+runtime dependency on GeometryBasics. For GL-ready output:
+
+```julia
+using GeometryBasics
+mesh = get_mesh(tile; point_type = Point2{UInt16}, face_type = GLTriangleFace)
+```
+
+`GLTriangleFace` stores its indices in `OffsetInteger{-1, UInt32}`, so 1-based
+inputs become 0-based on construction — directly GL-uploadable.
 """
-struct Mesh
-    vertices::Matrix{UInt16}
-    triangles::Matrix{UInt32}
+struct Mesh{P,F}
+    vertices::Vector{P}
+    triangles::Vector{F}
 end
 
-mutable struct _Builder
+"""
+    MesherCache(grid_size::Integer)
+    MesherCache(mesher::Mesher)
+
+Preallocated scratch buffer for [`get_mesh`](@ref). Holds the per-call
+`Matrix{UInt32}` index map (1 MB at `grid_size = 513`). Pass via the `cache`
+kwarg to avoid the per-call allocation in hot loops:
+
+```julia
+cache = MesherCache(mesher)
+for err in 1:50
+    mesh = get_mesh(tile; max_error = err, cache)
+end
+```
+
+One `MesherCache` per concurrent task — it is **not** thread-safe to share.
+It deliberately does not live on the `Mesher` itself so that a single
+`Mesher` remains safely shareable across threads.
+"""
+struct MesherCache
+    indices::Matrix{UInt32}
+    MesherCache(grid_size::Integer) = new(zeros(UInt32, grid_size, grid_size))
+    MesherCache(m::Mesher) = MesherCache(m.grid_size)
+end
+
+mutable struct _Builder{Te}
     const size::Int
-    const max_error::Float32
-    const errors::Matrix{Float32}
+    const max_error::Te
+    const errors::Matrix{Te}
     const indices::Matrix{UInt32}
     num_vertices::Int
     num_triangles::Int
@@ -178,17 +234,24 @@ function _count!(b::_Builder, ax::Int, ay::Int, bx::Int, by::Int, cx::Int, cy::I
     return nothing
 end
 
-mutable struct _Filler
+# Tuple types want their args as a single tuple; everything else (Point2{T}
+# from GeometryBasics, user-defined Point structs, etc.) takes positional args.
+@inline _construct(::Type{P}, x::Integer, y::Integer) where {P<:Tuple} = P((x, y))
+@inline _construct(::Type{P}, x::Integer, y::Integer) where {P} = P(x, y)
+@inline _construct(::Type{F}, a::Integer, b::Integer, c::Integer) where {F<:Tuple} = F((a, b, c))
+@inline _construct(::Type{F}, a::Integer, b::Integer, c::Integer) where {F} = F(a, b, c)
+
+mutable struct _Filler{P,F,Te}
     const size::Int
-    const max_error::Float32
-    const errors::Matrix{Float32}
+    const max_error::Te
+    const errors::Matrix{Te}
     const indices::Matrix{UInt32}
-    const vertices::Vector{UInt16}
-    const triangles::Vector{UInt32}
-    tri_offset::Int
+    const vertices::Vector{P}
+    const triangles::Vector{F}
+    tri_count::Int
 end
 
-function _process!(f::_Filler, ax::Int, ay::Int, bx::Int, by::Int, cx::Int, cy::Int)
+function _process!(f::_Filler{P,F}, ax::Int, ay::Int, bx::Int, by::Int, cx::Int, cy::Int) where {P,F}
     mx = (ax + bx) >> 1
     my = (ay + by) >> 1
     @inbounds if abs(ax - cx) + abs(ay - cy) > 1 && f.errors[mx, my] > f.max_error
@@ -199,49 +262,57 @@ function _process!(f::_Filler, ax::Int, ay::Int, bx::Int, by::Int, cx::Int, cy::
             a = f.indices[ax, ay]
             b = f.indices[bx, by]
             c = f.indices[cx, cy]
-            f.vertices[2 * (a - 1) + 1] = ax
-            f.vertices[2 * (a - 1) + 2] = ay
-            f.vertices[2 * (b - 1) + 1] = bx
-            f.vertices[2 * (b - 1) + 2] = by
-            f.vertices[2 * (c - 1) + 1] = cx
-            f.vertices[2 * (c - 1) + 2] = cy
-            f.triangles[f.tri_offset + 1] = a
-            f.triangles[f.tri_offset + 2] = b
-            f.triangles[f.tri_offset + 3] = c
-            f.tri_offset += 3
+            f.vertices[a] = _construct(P, ax, ay)
+            f.vertices[b] = _construct(P, bx, by)
+            f.vertices[c] = _construct(P, cx, cy)
+            f.tri_count += 1
+            f.triangles[f.tri_count] = _construct(F, a, b, c)
         end
     end
     return nothing
 end
 
 """
-    get_mesh(tile::Tile; max_error::Real = 0) -> Mesh
+    get_mesh(tile::Tile; max_error = 0,
+             point_type = NTuple{2,UInt16},
+             face_type  = NTuple{3,UInt32},
+             cache      = MesherCache(tile.mesher)) -> Mesh
 
 Walk the implicit RTIN binary tree top-down, emitting a triangle whenever the
-error at its long-edge midpoint is at or below `max_error`. Returns a `Mesh`
-with 1-based vertex coordinates and 1-based triangle vertex indices.
+error at its long-edge midpoint is at or below `max_error`. Returns a
+`Mesh{P,F}` where vertices are constructed `point_type(x, y)` and triangles
+are constructed `face_type(a, b, c)`. All indices are 1-based.
+
+Pass an explicit `cache::MesherCache` in hot loops to avoid reallocating the
+internal index buffer on every call.
 """
-function get_mesh(tile::Tile; max_error::Real = 0)
+Base.@constprop :aggressive function get_mesh(
+    tile::Tile{T};
+    max_error::Real = 0,
+    point_type::Type{P} = NTuple{2,UInt16},
+    face_type::Type{F}  = NTuple{3,UInt32},
+    cache::MesherCache  = MesherCache(tile.mesher),
+) where {T<:AbstractFloat, P, F}
     m = tile.mesher
     sz = m.grid_size
-    err = Float32(max_error)
-    indices = zeros(UInt32, sz, sz)
+    size(cache.indices) == (sz, sz) || throw(ArgumentError(
+        "MesherCache size $(size(cache.indices)) doesn't match grid $sz × $sz."))
+    err = T(max_error)
+    indices = cache.indices
+    fill!(indices, UInt32(0))
 
-    builder = _Builder(sz, err, tile.errors, indices, 0, 0)
+    builder = _Builder{T}(sz, err, tile.errors, indices, 0, 0)
     _count!(builder, 1,  1,  sz, sz, sz, 1 )
     _count!(builder, sz, sz, 1,  1,  1,  sz)
 
-    verts_flat = Vector{UInt16}(undef, 2 * builder.num_vertices)
-    tris_flat  = Vector{UInt32}(undef, 3 * builder.num_triangles)
+    verts = Vector{P}(undef, builder.num_vertices)
+    tris  = Vector{F}(undef, builder.num_triangles)
 
-    filler = _Filler(sz, err, tile.errors, indices, verts_flat, tris_flat, 0)
+    filler = _Filler{P,F,T}(sz, err, tile.errors, indices, verts, tris, 0)
     _process!(filler, 1,  1,  sz, sz, sz, 1 )
     _process!(filler, sz, sz, 1,  1,  1,  sz)
 
-    return Mesh(
-        reshape(verts_flat, 2, builder.num_vertices),
-        reshape(tris_flat,  3, builder.num_triangles),
-    )
+    return Mesh(verts, tris)
 end
 
 end # module

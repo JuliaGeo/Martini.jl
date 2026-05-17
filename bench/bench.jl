@@ -33,20 +33,21 @@ res_mesh30 = @b get_mesh($tile; max_error = 30)
 println("mesh (max_error=30) : ", format_ms(res_mesh30))
 
 mesh30 = get_mesh(tile; max_error = 30)
-@printf "  vertices=%d triangles=%d\n\n" size(mesh30.vertices, 2) size(mesh30.triangles, 2)
+@printf "  vertices=%d triangles=%d\n\n" length(mesh30.vertices) length(mesh30.triangles)
 
-# 4) Sweep max_error 0..20.
-println("== max_error sweep (Chairmarks median, per get_mesh) ==")
-function sweep!(tile)
+# 4) Sweep max_error 0..20 with a reused MesherCache.
+println("== max_error sweep (Chairmarks median, per get_mesh; cache reused) ==")
+function sweep!(tile, cache)
     total_s = 0.0
     for e in 0:20
-        r = @b get_mesh($tile; max_error = $e)
+        r = @b get_mesh($tile; max_error = $e, cache = $cache)
         total_s += r.time
         @printf "mesh %2d : %s\n" e format_ms(r)
     end
     return total_s
 end
-sweep_total_s = sweep!(tile)
+sweep_cache = MesherCache(m)
+sweep_total_s = sweep!(tile, sweep_cache)
 @printf "\n21 meshes total (sum of medians): %s\n" format_ms(sweep_total_s)
 
 # 5) First-call latency — what JS console.time would see including JIT.

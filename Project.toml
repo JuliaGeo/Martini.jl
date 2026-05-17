@@ -1,7 +1,7 @@
 name = "Martini"
 uuid = "5a6a432f-473d-4d96-8080-e08c33a11337"
 authors = ["Anshul Singhvi <anshulsinghvi@gmail.com>"]
-version = "0.1.0"
+version = "0.2.0"
 
 [compat]
 julia = "1.10"

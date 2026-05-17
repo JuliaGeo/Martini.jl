@@ -8,6 +8,7 @@ CurrentModule = Martini
 
 ```@docs
 Mesher
+MesherCache
 Tile
 Mesh
 ```

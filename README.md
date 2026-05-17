@@ -23,30 +23,52 @@ using Martini
 m = Mesher(257)
 
 # `terrain` is a length-65 025 (=257²) Vector{Float32} of heights, y-major
-# (matches the Mapbox/JS convention). A 257×257 Matrix{Float32} also works —
-# the two layouts share memory once reshape'd internally.
+# (matches the Mapbox/JS convention). A 257×257 Matrix{Float32} also works.
+# Pass a Float64 array to get a Tile{Float64} back (Tile is parametric on
+# AbstractFloat).
 tile = create_tile(m, terrain)
 
-# 10-metre approximation error
+# 10-metre approximation error.
 mesh = get_mesh(tile; max_error = 10)
 
-# mesh.vertices  :: Matrix{UInt16}  size (2, N) — columns are 1-based (x, y) grid coords in [1, 257]
-# mesh.triangles :: Matrix{UInt32}  size (3, M) — columns are 1-based vertex indices
+# mesh.vertices  :: Vector{Tuple{UInt16, UInt16}}     — 1-based (x, y) grid coords
+# mesh.triangles :: Vector{Tuple{UInt32, UInt32, UInt32}} — 1-based vertex indices
 ```
 
 For WebGL/OpenGL output, subtract 1 from both `mesh.vertices` (to land in
-`[0, grid_size-1]`) and `mesh.triangles` (to get 0-based indices).
+`[0, grid_size-1]`) and `mesh.triangles` (to get 0-based indices) — or use
+`GeometryBasics.GLTriangleFace`, which stores 0-based offsets natively:
+
+```julia
+using GeometryBasics
+mesh = get_mesh(tile;
+    max_error  = 10,
+    point_type = Point2{UInt16},
+    face_type  = GLTriangleFace,   # 0-based via OffsetInteger{-1, UInt32}
+)
+```
+
+### Reusing scratch buffers in hot loops
+
+```julia
+cache = MesherCache(m)
+for err in 1:50
+    mesh = get_mesh(tile; max_error = err, cache)
+end
+```
+
+`MesherCache` is one allocation per concurrent task. It is deliberately *not*
+on the `Mesher` so a single `Mesher` remains thread-safely shareable.
 
 ## Layout & indexing notes
 
 - The `terrain` input is laid out **y-major** when supplied as a flat `Vector`:
   `terrain[y * grid_size + x + 1]` for 0-based `(x, y)`. This matches the Mapbox
-  PNG decoding pipeline. Internally it's reshape'd to a `Matrix{Float32}` of
-  size `(grid_size, grid_size)`, accessed `terrain[x, y]` with 1-based
-  `(x, y)`.
+  PNG decoding pipeline. Internally it's reshape'd to a `Matrix{T}` of size
+  `(grid_size, grid_size)`, accessed `terrain[x, y]` with 1-based `(x, y)`.
 - Output vertex coordinates in `mesh.vertices` are 1-based, in `[1, grid_size]`.
-- Triangle indices in `mesh.triangles` are 1-based — they index columns of
-  `mesh.vertices` directly under Julia conventions.
+- Triangle indices in `mesh.triangles` are 1-based — they index `mesh.vertices`
+  directly under Julia conventions.
 
 ## Reference ports
 

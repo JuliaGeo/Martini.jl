@@ -30,12 +30,33 @@ mesh   = get_mesh(tile; max_error = 10)        # 10-metre approximation error
 
 Output:
 
-* `mesh.vertices  :: Matrix{UInt16}` — shape `(2, N)`; each column is a
+* `mesh.vertices  :: Vector{Tuple{UInt16, UInt16}}` — each element is a
   **1-based** `(x, y)` grid coordinate in `[1, grid_size]`.
-* `mesh.triangles :: Matrix{UInt32}` — shape `(3, M)`; each column is a triple
-  of 1-based column indices into `mesh.vertices`.
+* `mesh.triangles :: Vector{Tuple{UInt32, UInt32, UInt32}}` — each element is
+  a triple of 1-based indices into `mesh.vertices`.
 
-For WebGL/OpenGL, subtract 1 from both `vertices` and `triangles`.
+For WebGL/OpenGL, subtract 1 from both `vertices` and `triangles` — or use
+GeometryBasics' `GLTriangleFace`, which stores 0-based offsets natively:
+
+```julia
+using GeometryBasics
+mesh = get_mesh(tile;
+    max_error  = 10,
+    point_type = Point2{UInt16},
+    face_type  = GLTriangleFace,
+)
+```
+
+## Type parameters
+
+* `Tile{T<:AbstractFloat}` is inferred from `eltype(terrain)`: pass
+  `Matrix{Float64}` to get a `Tile{Float64}`. Default is `Float32`.
+* `Mesh{P,F}` is controlled by the `point_type` and `face_type` kwargs.
+  Both default to plain `NTuple`s (no GeometryBasics runtime dep). Any
+  callable that accepts `T(x, y)` / `T(a, b, c)` works, plus `Tuple`
+  subtypes via a tuple-arg path.
+* `MesherCache(mesher)` — preallocated scratch buffer; pass `cache = …`
+  in hot loops to avoid the per-call index-map allocation.
 
 ## How it works
 
@@ -63,7 +84,7 @@ threshold tested.
 
 ## See also
 
-* [`Mesher`](@ref), [`Tile`](@ref), [`Mesh`](@ref)
+* [`Mesher`](@ref), [`MesherCache`](@ref), [`Tile`](@ref), [`Mesh`](@ref)
 * [`create_tile`](@ref), [`get_mesh`](@ref)
 * [Mapbox Martini](https://github.com/mapbox/martini) — the original JavaScript
 * [pymartini](https://github.com/kylebarron/pymartini) — Python port
