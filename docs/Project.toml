@@ -1,6 +1,6 @@
 [deps]
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
-Martini = "23f293ef-cb6b-4334-980c-da4c939bf1c3"
+Martini = "5a6a432f-473d-4d96-8080-e08c33a11337"
 
 [sources]
 Martini = {path = ".."}
