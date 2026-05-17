@@ -1,0 +1,14 @@
+name = "Martini"
+uuid = "23f293ef-cb6b-4334-980c-da4c939bf1c3"
+authors = ["Anshul Singhvi <anshulsinghvi@gmail.com>"]
+version = "0.1.0"
+
+[compat]
+julia = "1.10"
+
+[extras]
+PNGFiles = "f57f5aa1-a3ce-4bc8-8ab9-96f992907883"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["PNGFiles", "Test"]
