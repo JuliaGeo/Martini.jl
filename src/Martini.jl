@@ -61,9 +61,22 @@ struct Mesher
     end
 end
 
+"""
+    Tile
+
+A heightfield bound to a [`Mesher`](@ref), together with the per-vertex maximum
+approximation error map. Constructed via [`create_tile`](@ref); pass to
+[`get_mesh`](@ref) to extract a triangle mesh at any error threshold.
+
+Fields:
+- `mesher::Mesher` — the precomputed RTIN structure
+- `terrain::Matrix{Float32}` — `(grid_size, grid_size)`, indexed `terrain[x, y]` (1-based)
+- `errors::Matrix{Float32}`  — same shape; `errors[x, y]` is the worst error
+  observed at grid position `(x, y)` across all triangle levels.
+"""
 struct Tile
     mesher::Mesher
-    terrain::Matrix{Float32}     # size (grid_size, grid_size); terrain[x, y]
+    terrain::Matrix{Float32}
     errors::Matrix{Float32}
 end
 

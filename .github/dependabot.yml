@@ -1,0 +1,22 @@
+version: 2
+updates:
+  # GitHub Actions (the only ecosystem Dependabot natively supports for Julia repos —
+  # use CompatHelper.yml for Julia [compat] entry maintenance.)
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - github-actions
+    groups:
+      julia-actions:
+        patterns:
+          - 'julia-actions/*'
+      actions-misc:
+        patterns:
+          - '*'
+        exclude-patterns:
+          - 'julia-actions/*'
