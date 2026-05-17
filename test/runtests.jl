@@ -21,10 +21,11 @@ include("util.jl")
         @test m.num_parent_triangles == 30 - 16   # 14
 
         # Triangle 0 (i=0, id=2): top-right corner of the whole tile.
-        @test m.coords[1:4] == UInt16[4, 4, 0, 0]
+        # 1-based corners: max is grid_size=5, "zero" is 1.
+        @test m.coords[1:4] == UInt16[5, 5, 1, 1]
 
         # Triangle 1 (i=1, id=3): bottom-left of the whole tile.
-        @test m.coords[5:8] == UInt16[0, 0, 4, 4]
+        @test m.coords[5:8] == UInt16[1, 1, 5, 5]
     end
 
     @testset "Tile / errors" begin
@@ -32,18 +33,18 @@ include("util.jl")
         # Length mismatch should be rejected.
         @test_throws ArgumentError create_tile(m, zeros(Float32, 10))
 
-        # Flat terrain -> all errors are 0.
+        # Flat terrain -> all errors are 0. terrain/errors are now Matrix-backed.
         flat = zeros(Float32, 25)
         tile = create_tile(m, flat)
-        @test tile.errors == zeros(Float32, 25)
+        @test size(tile.errors) == (5, 5)
+        @test all(tile.errors .== 0)
 
-        # Pointy: spike at the center vertex (0-based (2,2), 1-based index 13).
-        # Linear interpolation of any pair of neighbors through (2,2) is 0,
-        # so the error at that vertex should equal the height itself.
+        # Pointy: spike at the center vertex (1-based (3, 3)).
+        # 13th flat element == (x=3, y=3) after reshape(_, 5, 5).
         terrain = zeros(Float32, 25)
         terrain[13] = 100f0
         tile2 = create_tile(m, terrain)
-        @test tile2.errors[13] == 100f0
+        @test tile2.errors[3, 3] == 100f0
     end
 
     @testset "get_mesh on flat terrain" begin
@@ -54,7 +55,8 @@ include("util.jl")
         @test size(mesh.vertices) == (2, 4)
         @test size(mesh.triangles) == (3, 2)
         coord_set = Set(eachcol(mesh.vertices))
-        @test coord_set == Set([UInt16[0, 0], UInt16[4, 0], UInt16[0, 4], UInt16[4, 4]])
+        # 1-based corners: (1,1) … (5,5)
+        @test coord_set == Set([UInt16[1, 1], UInt16[5, 1], UInt16[1, 5], UInt16[5, 5]])
         # Triangle indices are 1-based and refer to existing columns.
         @test all(1 .<= mesh.triangles .<= 4)
     end
@@ -84,7 +86,7 @@ include("util.jl")
         tile = create_tile(m, terrain)
         mesh = get_mesh(tile; max_error = 500)
 
-        expected_vertices = UInt16[
+        expected_vertices_0based = UInt16[
             320, 64, 256, 128, 320, 128, 384, 128, 256, 0, 288, 160, 256, 192, 288, 192,
             320, 192, 304, 176, 256, 256, 288, 224, 352, 160, 320, 160, 512, 0, 384, 0,
             128, 128, 128, 0, 64, 64, 64, 0, 0, 0, 32, 32, 192, 192, 384, 384, 512, 256,
@@ -92,6 +94,7 @@ include("util.jl")
             384, 256, 512, 256, 384, 0, 512, 128, 256, 64, 192, 0, 256, 64, 128, 32, 96,
             0, 128, 32, 64, 16, 48, 0, 64, 0, 32,
         ]
+        expected_vertices = expected_vertices_0based .+ UInt16(1)
         expected_triangles_0based = UInt32[
             0, 1, 2, 3, 0, 2, 4, 1, 0, 5, 6, 7, 7, 8, 9, 5, 7, 9, 1, 6, 5, 6, 10, 11, 11,
             8, 7, 6, 11, 7, 12, 2, 13, 8, 12, 13, 3, 2, 12, 2, 1, 5, 13, 5, 9, 8, 13, 9, 2,
