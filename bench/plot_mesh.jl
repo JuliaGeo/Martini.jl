@@ -51,8 +51,8 @@ mesh!(ax1, mesh2d; color = elevs, colormap = :terrain, shading = NoShading)
 wireframe!(ax1, mesh2d; color = (:black, 0.35), linewidth = 0.25)
 
 ax2 = Axis3(fig[1, 2];
-    title = "3D mesh, elevation as z (vertical exaggeration ≈ 2×)",
-    aspect = (1, 1, 0.5),
+    title = "3D mesh, elevation as z (true data aspect)",
+    aspect = :data,
     azimuth = 0.4π, elevation = 0.18π,
     xlabel = "x", ylabel = "y", zlabel = "z (m)",
 )
