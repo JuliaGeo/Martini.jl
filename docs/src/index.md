@@ -84,6 +84,7 @@ threshold tested.
 
 ## See also
 
+* [Examples](@ref) — full Fuji terrain workflow with CairoMakie plot
 * [`Mesher`](@ref), [`MesherCache`](@ref), [`Tile`](@ref), [`Mesh`](@ref)
 * [`create_tile`](@ref), [`get_mesh`](@ref)
 * [Mapbox Martini](https://github.com/mapbox/martini) — the original JavaScript
