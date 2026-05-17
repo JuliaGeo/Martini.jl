@@ -52,4 +52,62 @@ struct Mesher
     end
 end
 
+struct Tile
+    mesher::Mesher
+    terrain::Vector{Float32}
+    errors::Vector{Float32}
+end
+
+"""
+    create_tile(mesher::Mesher, terrain::AbstractVector{<:Real}) -> Tile
+
+Build a `Tile` for the given terrain heightfield. `terrain` must have length
+`mesher.grid_size^2`, laid out y-major: `terrain[y*size + x + 1]` is the height
+at 0-based grid position `(x, y)`. Computes the per-vertex max-error map eagerly.
+"""
+function create_tile(mesher::Mesher, terrain::AbstractVector{<:Real})
+    sz = mesher.grid_size
+    length(terrain) == sz * sz || throw(ArgumentError(
+        "Expected terrain of length $(sz * sz) ($sz x $sz), got $(length(terrain))."))
+    terrain_f32 = terrain isa Vector{Float32} ? copy(terrain) : Vector{Float32}(terrain)
+    errors = zeros(Float32, length(terrain_f32))
+    tile = Tile(mesher, terrain_f32, errors)
+    _update_errors!(tile)
+    return tile
+end
+
+function _update_errors!(tile::Tile)
+    m = tile.mesher
+    coords = m.coords
+    sz = m.grid_size
+    terrain = tile.terrain
+    errors = tile.errors
+    npt = m.num_parent_triangles
+    nt = m.num_triangles
+
+    @inbounds for i in (nt - 1):-1:0
+        k = i * 4 + 1
+        ax = Int(coords[k    ])
+        ay = Int(coords[k + 1])
+        bx = Int(coords[k + 2])
+        by = Int(coords[k + 3])
+        mx = (ax + bx) >> 1
+        my = (ay + by) >> 1
+        cx = mx + my - ay
+        cy = my + ax - mx
+
+        interp = (terrain[ay * sz + ax + 1] + terrain[by * sz + bx + 1]) / 2
+        middle_idx = my * sz + mx + 1
+        middle_err = abs(interp - terrain[middle_idx])
+        errors[middle_idx] = max(errors[middle_idx], middle_err)
+
+        if i < npt
+            left_child  = ((ay + cy) >> 1) * sz + ((ax + cx) >> 1) + 1
+            right_child = ((by + cy) >> 1) * sz + ((bx + cx) >> 1) + 1
+            errors[middle_idx] = max(errors[middle_idx], errors[left_child], errors[right_child])
+        end
+    end
+    return tile
+end
+
 end # module

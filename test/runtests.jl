@@ -24,4 +24,23 @@ using Martini
         # Triangle 1 (i=1, id=3): bottom-left of the whole tile.
         @test m.coords[5:8] == UInt16[0, 0, 4, 4]
     end
+
+    @testset "Tile / errors" begin
+        m = Mesher(5)
+        # Length mismatch should be rejected.
+        @test_throws ArgumentError create_tile(m, zeros(Float32, 10))
+
+        # Flat terrain -> all errors are 0.
+        flat = zeros(Float32, 25)
+        tile = create_tile(m, flat)
+        @test tile.errors == zeros(Float32, 25)
+
+        # Pointy: spike at the center vertex (0-based (2,2), 1-based index 13).
+        # Linear interpolation of any pair of neighbors through (2,2) is 0,
+        # so the error at that vertex should equal the height itself.
+        terrain = zeros(Float32, 25)
+        terrain[13] = 100f0
+        tile2 = create_tile(m, terrain)
+        @test tile2.errors[13] == 100f0
+    end
 end
