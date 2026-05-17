@@ -1,6 +1,8 @@
 using Test
 using Martini
 
+include("util.jl")
+
 @testset "Martini.jl" begin
     @testset "Mesher construction" begin
         @test_throws ArgumentError Mesher(256)  # not 2^k + 1
@@ -65,5 +67,14 @@ using Martini
         mesh_loose = get_mesh(tile; max_error = 1000)   # threshold above spike
         mesh_tight = get_mesh(tile; max_error = 0)      # threshold below spike
         @test size(mesh_tight.vertices, 2) > size(mesh_loose.vertices, 2)
+    end
+
+    @testset "mapbox_terrain_to_grid (fuji)" begin
+        terrain = mapbox_terrain_to_grid(joinpath(@__DIR__, "fixtures", "fuji.png"))
+        # fuji.png is 512x512 -> grid 513x513
+        @test length(terrain) == 513 * 513
+        # Heights should sit in a sane terrestrial range (m above sea level).
+        @test minimum(terrain) > -500f0
+        @test maximum(terrain) < 5000f0    # Mt. Fuji peak ~3776m
     end
 end
