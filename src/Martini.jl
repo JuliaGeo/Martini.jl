@@ -110,4 +110,117 @@ function _update_errors!(tile::Tile)
     return tile
 end
 
+"""
+    Mesh
+
+Result of `get_mesh`. `vertices` is a `2 × N` matrix where each column is a
+`(x, y)` grid coordinate (0-based, in the `[0, grid_size-1]` range). `triangles`
+is a `3 × M` matrix where each column is a triple of **1-based** column indices
+into `vertices`.
+"""
+struct Mesh
+    vertices::Matrix{UInt16}
+    triangles::Matrix{UInt32}
+end
+
+# Internal scratch state for the count-pass (`const` fields require Julia >= 1.8).
+mutable struct _Builder
+    const size::Int
+    const max_error::Float32
+    const errors::Vector{Float32}
+    const indices::Vector{UInt32}
+    num_vertices::Int
+    num_triangles::Int
+end
+
+function _count!(b::_Builder, ax::Int, ay::Int, bx::Int, by::Int, cx::Int, cy::Int)
+    mx = (ax + bx) >> 1
+    my = (ay + by) >> 1
+    @inbounds if abs(ax - cx) + abs(ay - cy) > 1 &&
+                 b.errors[my * b.size + mx + 1] > b.max_error
+        _count!(b, cx, cy, ax, ay, mx, my)
+        _count!(b, bx, by, cx, cy, mx, my)
+    else
+        @inbounds for (x, y) in ((ax, ay), (bx, by), (cx, cy))
+            idx = y * b.size + x + 1
+            if b.indices[idx] == 0
+                b.num_vertices += 1
+                b.indices[idx] = b.num_vertices
+            end
+        end
+        b.num_triangles += 1
+    end
+    return nothing
+end
+
+mutable struct _Filler
+    const size::Int
+    const max_error::Float32
+    const errors::Vector{Float32}
+    const indices::Vector{UInt32}
+    const vertices::Vector{UInt16}   # flat: 2*N
+    const triangles::Vector{UInt32}  # flat: 3*M
+    tri_offset::Int                  # 0-based offset into triangles
+end
+
+function _process!(f::_Filler, ax::Int, ay::Int, bx::Int, by::Int, cx::Int, cy::Int)
+    mx = (ax + bx) >> 1
+    my = (ay + by) >> 1
+    @inbounds if abs(ax - cx) + abs(ay - cy) > 1 &&
+                 f.errors[my * f.size + mx + 1] > f.max_error
+        _process!(f, cx, cy, ax, ay, mx, my)
+        _process!(f, bx, by, cx, cy, mx, my)
+    else
+        @inbounds begin
+            a = f.indices[ay * f.size + ax + 1]
+            b = f.indices[by * f.size + bx + 1]
+            c = f.indices[cy * f.size + cx + 1]
+
+            f.vertices[2 * (a - 1) + 1] = ax
+            f.vertices[2 * (a - 1) + 2] = ay
+            f.vertices[2 * (b - 1) + 1] = bx
+            f.vertices[2 * (b - 1) + 2] = by
+            f.vertices[2 * (c - 1) + 1] = cx
+            f.vertices[2 * (c - 1) + 2] = cy
+
+            f.triangles[f.tri_offset + 1] = a
+            f.triangles[f.tri_offset + 2] = b
+            f.triangles[f.tri_offset + 3] = c
+            f.tri_offset += 3
+        end
+    end
+    return nothing
+end
+
+"""
+    get_mesh(tile::Tile; max_error::Real = 0) -> Mesh
+
+Walk the implicit RTIN binary tree top-down, emitting a triangle whenever the
+error at its long-edge midpoint is at or below `max_error`. Returns a `Mesh`
+with 1-based triangle vertex indices.
+"""
+function get_mesh(tile::Tile; max_error::Real = 0)
+    m = tile.mesher
+    sz = m.grid_size
+    max_idx = sz - 1
+    err = Float32(max_error)
+    indices = zeros(UInt32, sz * sz)
+
+    builder = _Builder(sz, err, tile.errors, indices, 0, 0)
+    _count!(builder, 0,       0,       max_idx, max_idx, max_idx, 0      )
+    _count!(builder, max_idx, max_idx, 0,       0,       0,       max_idx)
+
+    verts_flat = Vector{UInt16}(undef, 2 * builder.num_vertices)
+    tris_flat  = Vector{UInt32}(undef, 3 * builder.num_triangles)
+
+    filler = _Filler(sz, err, tile.errors, indices, verts_flat, tris_flat, 0)
+    _process!(filler, 0,       0,       max_idx, max_idx, max_idx, 0      )
+    _process!(filler, max_idx, max_idx, 0,       0,       0,       max_idx)
+
+    return Mesh(
+        reshape(verts_flat, 2, builder.num_vertices),
+        reshape(tris_flat,  3, builder.num_triangles),
+    )
+end
+
 end # module

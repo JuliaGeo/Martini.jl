@@ -43,4 +43,27 @@ using Martini
         tile2 = create_tile(m, terrain)
         @test tile2.errors[13] == 100f0
     end
+
+    @testset "get_mesh on flat terrain" begin
+        m = Mesher(5)
+        tile = create_tile(m, zeros(Float32, 25))
+        mesh = get_mesh(tile; max_error = 0)
+        # Flat -> no subdivision: 4 corner vertices, 2 triangles.
+        @test size(mesh.vertices) == (2, 4)
+        @test size(mesh.triangles) == (3, 2)
+        coord_set = Set(eachcol(mesh.vertices))
+        @test coord_set == Set([UInt16[0, 0], UInt16[4, 0], UInt16[0, 4], UInt16[4, 4]])
+        # Triangle indices are 1-based and refer to existing columns.
+        @test all(1 .<= mesh.triangles .<= 4)
+    end
+
+    @testset "get_mesh subdivides when error exceeds threshold" begin
+        m = Mesher(5)
+        terrain = zeros(Float32, 25)
+        terrain[13] = 100f0           # spike at center
+        tile = create_tile(m, terrain)
+        mesh_loose = get_mesh(tile; max_error = 1000)   # threshold above spike
+        mesh_tight = get_mesh(tile; max_error = 0)      # threshold below spike
+        @test size(mesh_tight.vertices, 2) > size(mesh_loose.vertices, 2)
+    end
 end
