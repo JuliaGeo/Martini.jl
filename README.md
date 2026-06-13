@@ -11,7 +11,7 @@ Based on ["Right-Triangulated Irregular Networks" by Will Evans et al. (1997)](h
 
 ```julia
 import Pkg
-Pkg.add(url = "https://github.com/JuliaGeo/Martini.jl")
+Pkg.add("Martini")
 ```
 
 ## Example
