@@ -7,10 +7,11 @@ GeometryBasics = "5c1252a2-5f33-56bf-86c9-59e7332b4326"
 Martini = "5a6a432f-473d-4d96-8080-e08c33a11337"
 PNGFiles = "f57f5aa1-a3ce-4bc8-8ab9-96f992907883"
 
-[sources]
-Martini = {path = ".."}
+[sources.Martini]
+path = ".."
 
 [compat]
 CairoMakie = "0.12, 0.13, 0.14, 0.15"
+ColorTypes = "0.12"
 Documenter = "1"
 GeometryBasics = "0.4, 0.5"
